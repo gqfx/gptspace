@@ -5,6 +5,14 @@ import { dirname, join, relative, resolve, sep } from "node:path";
 import type { ServerConfig } from "./config.js";
 import { createManagedWorktree } from "./git-worktrees.js";
 import { assertAllowedPath, isPathInsideRoot, resolveAllowedPath } from "./roots.js";
+import {
+  formatSkillsNotice,
+  loadWorkspaceSkills,
+  markSkillActivated,
+  resolveSkillReadPath,
+  type LoadedSkills,
+  type SkillReadResolution,
+} from "./skills.js";
 
 export interface LoadedAgentsFile {
   path: string;
@@ -28,11 +36,20 @@ export interface Workspace {
   sourceRoot?: string;
   worktree?: WorkspaceWorktree;
   loadedAgentsFiles: Map<string, string>;
+  skills: LoadedSkills["skills"];
+  skillDiagnostics: LoadedSkills["diagnostics"];
+  activatedSkillDirs: Set<string>;
 }
 
 export interface WorkspaceContext {
   workspace: Workspace;
   agentsFiles: LoadedAgentsFile[];
+}
+
+export interface WorkspaceReadPath {
+  absolutePath: string;
+  readRoots: string[];
+  skillRead?: SkillReadResolution;
 }
 
 export interface OpenWorkspaceInput {
@@ -94,6 +111,8 @@ export class WorkspaceRegistry {
           ?.listLoadedAgentFiles(workspaceId)
           .map((file) => [file.path, file.content]) ?? [],
       ),
+      ...this.loadSkillsForWorkspace(root),
+      activatedSkillDirs: new Set(),
     };
     this.store?.touchSession(workspaceId);
     this.workspaces.set(restoredWorkspace.id, restoredWorkspace);
@@ -110,17 +129,53 @@ export class WorkspaceRegistry {
     return absolutePath;
   }
 
+  resolveReadPath(workspace: Workspace, inputPath: string): WorkspaceReadPath {
+    try {
+      return {
+        absolutePath: this.resolvePath(workspace, inputPath),
+        readRoots: [workspace.root],
+      };
+    } catch (workspaceError) {
+      const skillRead = resolveSkillReadPath(
+        workspace.skills,
+        workspace.activatedSkillDirs,
+        inputPath,
+      );
+      if (!skillRead) throw workspaceError;
+
+      return {
+        absolutePath: skillRead.absolutePath,
+        readRoots: [workspace.root, skillRead.skill.baseDir],
+        skillRead,
+      };
+    }
+  }
+
+  markReadPathLoaded(workspace: Workspace, readPath: WorkspaceReadPath): void {
+    if (readPath.skillRead?.isSkillFile) {
+      markSkillActivated(workspace.activatedSkillDirs, readPath.skillRead.skill);
+    }
+  }
+
+  formatSkillsNotice(workspace: Workspace): string | undefined {
+    return formatSkillsNotice(workspace.skills, { compact: this.config.compactSkills });
+  }
+
   resolveWorkingDirectory(workspace: Workspace, workingDirectory: string | undefined): string {
     const directory = workingDirectory ? this.resolvePath(workspace, workingDirectory) : workspace.root;
     return assertAllowedPath(directory, [workspace.root]);
   }
 
   async loadAgentsForPath(workspace: Workspace, absolutePath: string): Promise<LoadedAgentsFile[]> {
+    if (!this.config.autoLoadAgentsMd) return [];
+
     const directory = await this.pathDirectory(absolutePath);
     return this.loadAgentsForDirectory(workspace, directory);
   }
 
   async loadAgentsForDirectory(workspace: Workspace, directory: string): Promise<LoadedAgentsFile[]> {
+    if (!this.config.autoLoadAgentsMd) return [];
+
     const resolvedDirectory = assertAllowedPath(directory, [workspace.root]);
     const directories = directoriesBetween(workspace.root, resolvedDirectory);
     const loaded: LoadedAgentsFile[] = [];
@@ -187,6 +242,8 @@ export class WorkspaceRegistry {
       sourceRoot: input.sourceRoot,
       worktree: input.worktree,
       loadedAgentsFiles: new Map(),
+      ...this.loadSkillsForWorkspace(input.root),
+      activatedSkillDirs: new Set(),
     };
 
     this.store?.createSession({
@@ -202,6 +259,14 @@ export class WorkspaceRegistry {
     const agentsFiles = await this.loadAgentsForDirectory(workspace, workspace.root);
 
     return { workspace, agentsFiles };
+  }
+
+  private loadSkillsForWorkspace(root: string): Pick<Workspace, "skills" | "skillDiagnostics"> {
+    const result = loadWorkspaceSkills(this.config, root);
+    return {
+      skills: result.skills,
+      skillDiagnostics: result.diagnostics,
+    };
   }
 
   private assertWorkspaceRootAllowed(root: string, mode: WorkspaceMode, sourceRoot: string | undefined): string {
@@ -256,11 +321,39 @@ function directoriesBetween(root: string, directory: string): string[] {
   return directories;
 }
 
-export function formatAgentsNotice(agentsFiles: LoadedAgentsFile[]): string | undefined {
+export function formatAgentsNotice(agentsFiles: LoadedAgentsFile[], workspaceRoot?: string): string | undefined {
   const newAgentsFiles = agentsFiles.filter((file) => !file.alreadyLoaded);
   if (newAgentsFiles.length === 0) return undefined;
 
-  const sections = newAgentsFiles.map((file) => `## ${file.path} (newly loaded)\n\n${file.content}`);
+  const sections = newAgentsFiles.map(
+    (file) =>
+      `<project_instructions path="${escapeXmlAttribute(formatAgentsPath(file.path, workspaceRoot))}">\n${file.content}\n</project_instructions>`,
+  );
 
-  return `AGENTS.md context for this workspace path:\n\n${sections.join("\n\n")}`;
+  return `<project_context>\nProject-specific instructions and guidelines:\n\n${sections.join("\n\n")}\n</project_context>`;
+}
+
+export function formatAgentsPath(path: string, workspaceRoot: string | undefined): string {
+  if (!workspaceRoot) return path.split(sep).join("/");
+
+  const relationship = relative(workspaceRoot, path);
+  if (
+    relationship === "" ||
+    relationship.startsWith("..") ||
+    relationship === ".." ||
+    relationship.includes(`..${sep}`)
+  ) {
+    return path.split(sep).join("/");
+  }
+
+  return relationship.split(sep).join("/");
+}
+
+function escapeXmlAttribute(str: string): string {
+  return str
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/\"/g, "&quot;")
+    .replace(/'/g, "&apos;");
 }

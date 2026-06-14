@@ -87,10 +87,60 @@ calls:
 }
 ```
 
-The server automatically loads `AGENTS.md` files for the workspace root and for
-directories reached by later file, list, search, edit, write, or shell calls.
-Tool responses include whether each discovered `AGENTS.md` was newly loaded or
-already loaded in that workspace.
+By default, the server automatically loads `AGENTS.md` files for the workspace
+root and for directories reached by later file, list, search, edit, write, or
+shell calls. Project instructions are returned as XML-wrapped project context
+using workspace-relative paths:
+
+```xml
+<project_context>
+Project-specific instructions and guidelines:
+
+<project_instructions path="AGENTS.md">
+...
+</project_instructions>
+</project_context>
+```
+
+Set `DEVSPACE_AUTO_LOAD_AGENTS_MD=0` to disable automatic `AGENTS.md` injection.
+When disabled, DevSpace instead instructs the model to use the read tool to
+inspect relevant `AGENTS.md` files before working in the workspace or a
+subdirectory.
+
+## Skills
+
+Skills are disabled by default. Set `DEVSPACE_SKILLS=1` to expose Agent Skills
+through `open_workspace` output. DevSpace uses Pi's skill loader to discover
+skills from `DEVSPACE_AGENT_DIR` (`~/.pi/agent` by default), project `.pi/skills`,
+and optional comma-separated `DEVSPACE_SKILL_PATHS` for locations such as
+`~/.agents/skills`, `~/.codex/skills`, or `~/.claude/skills`.
+
+When enabled, `open_workspace` returns a compact catalog of skill names,
+descriptions, and readable `SKILL.md` paths. The model should use the normal
+read tool to load a matching skill path before following that skill. Skill paths
+may be outside the workspace, but read access is limited to advertised `SKILL.md`
+files and files under a skill directory after that skill's `SKILL.md` has been
+read.
+
+The default catalog format is:
+
+```xml
+<available_skills>
+  <skill>
+    <name>pdf-processing</name>
+    <description>Extract text and tables from PDFs.</description>
+    <path>~/.codex/skills/pdf-processing/SKILL.md</path>
+  </skill>
+</available_skills>
+```
+
+Set `DEVSPACE_COMPACT_SKILLS=1` to use the smaller format:
+
+```xml
+<skills>
+<skill name="pdf-processing" path="~/.codex/skills/pdf-processing/SKILL.md">Extract text and tables from PDFs.</skill>
+</skills>
+```
 
 ## Run Locally
 
@@ -104,6 +154,9 @@ DEVSPACE_ALLOWED_ROOTS="/home/waishnav/personal,/home/waishnav/work" \
 DEVSPACE_ALLOWED_HOSTS="localhost,127.0.0.1,agent.gitcms.blog" \
 DEVSPACE_PUBLIC_BASE_URL="https://agent.gitcms.blog" \
 DEVSPACE_WORKTREE_ROOT="/home/waishnav/.devspace/worktrees" \
+DEVSPACE_AUTO_LOAD_AGENTS_MD="1" \
+DEVSPACE_SKILLS="1" \
+DEVSPACE_SKILL_PATHS="/home/waishnav/.codex/skills,/home/waishnav/.claude/skills" \
 DEVSPACE_TOOL_MODE="full" \
 DEVSPACE_TOOL_NAMING="legacy" \
 npm run dev
