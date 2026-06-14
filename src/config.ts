@@ -4,6 +4,7 @@ import { expandHomePath } from "./roots.js";
 import type { AutoCommitConfig, AutoCommitProviderId } from "./autocommit/types.js";
 
 export type ToolNamingMode = "legacy" | "short";
+export type ToolCardMode = "off" | "minimal" | "write-only" | "full";
 const DEFAULT_AUTOCOMMIT_MODEL = "gpt-5.3-codex-spark";
 const DEFAULT_AUTOCOMMIT_CODEX_REASONING_EFFORT = "low";
 
@@ -16,6 +17,7 @@ export interface ServerConfig {
   publicBaseUrl: string;
   minimalTools: boolean;
   toolNaming: ToolNamingMode;
+  toolCardMode: ToolCardMode;
   stateDir: string;
   worktreeRoot: string;
   skillsEnabled: boolean;
@@ -128,6 +130,13 @@ function parseToolNaming(value: string | undefined): ToolNamingMode {
   throw new Error(`Invalid DEVSPACE_TOOL_NAMING: ${value}`);
 }
 
+function parseToolCardMode(value: string | undefined): ToolCardMode {
+  if (!value || value === "write-only") return "write-only";
+  if (value === "off" || value === "minimal" || value === "full") return value;
+
+  throw new Error(`Invalid DEVSPACE_TOOL_CARD_MODE: ${value}`);
+}
+
 function defaultStateDir(): string {
   return join(homedir(), ".local", "share", "devspace");
 }
@@ -150,6 +159,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
     publicBaseUrl: env.DEVSPACE_PUBLIC_BASE_URL ?? "https://agent.gitcms.blog",
     minimalTools: parseMinimalTools(env),
     toolNaming: parseToolNaming(env.DEVSPACE_TOOL_NAMING),
+    toolCardMode: parseToolCardMode(env.DEVSPACE_TOOL_CARD_MODE),
     stateDir: resolve(env.DEVSPACE_STATE_DIR ?? defaultStateDir()),
     worktreeRoot: resolve(expandHomePath(env.DEVSPACE_WORKTREE_ROOT ?? defaultWorktreeRoot())),
     skillsEnabled: parseBoolean(env.DEVSPACE_SKILLS),

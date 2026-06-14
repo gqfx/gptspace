@@ -37,6 +37,13 @@ that mode, the server instructs clients to use the shell tool with command-line
 programs such as `grep`, `rg`, `find`, `ls`, and `tree` for search and directory
 inspection.
 
+`DEVSPACE_TOOL_CARD_MODE` controls which tools advertise the ChatGPT Apps UI
+resource and therefore which tool calls create inline widget iframes. The default
+is `write-only` to keep long ChatGPT threads responsive: only write and edit
+results get interactive cards. Use `minimal` to also show the workspace-opening
+card, `full` to show cards for every tool result, or `off` to disable tool cards
+entirely.
+
 Server-level workflow guidance is exposed through MCP initialize instructions,
 not a dedicated info tool.
 
@@ -132,6 +139,7 @@ DEVSPACE_SKILLS="1" \
 DEVSPACE_SKILL_PATHS="/home/waishnav/.codex/skills,/home/waishnav/.claude/skills" \
 DEVSPACE_TOOL_MODE="full" \
 DEVSPACE_TOOL_NAMING="legacy" \
+DEVSPACE_TOOL_CARD_MODE="write-only" \
 npm run dev
 ```
 

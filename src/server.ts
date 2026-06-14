@@ -15,7 +15,7 @@ import express from "express";
 import type { Request, Response } from "express";
 import * as z from "zod/v4";
 import { createAutoCommitManager } from "./autocommit/manager.js";
-import { loadConfig, type ServerConfig } from "./config.js";
+import { loadConfig, type ServerConfig, type ToolCardMode } from "./config.js";
 import {
   editFileTool,
   findFilesTool,
@@ -71,6 +71,59 @@ type WorkspaceAppManifest = Record<string, WorkspaceAppManifestEntry>;
 interface DiffStats {
   additions: number;
   removals: number;
+}
+
+type ToolCardKind =
+  | "workspace"
+  | "read"
+  | "write"
+  | "edit"
+  | "search"
+  | "directory"
+  | "shell";
+
+interface ToolDefinitionMeta extends Record<string, unknown> {
+  ui: {
+    resourceUri: string;
+    visibility: ["model"];
+  };
+}
+
+type EmptyToolDefinitionMeta = Record<string, unknown> & {
+  "ui/resourceUri"?: string;
+};
+
+interface ToolCardDescriptorMeta {
+  _meta: ToolDefinitionMeta | EmptyToolDefinitionMeta;
+}
+
+function shouldAttachToolCard(mode: ToolCardMode, kind: ToolCardKind): boolean {
+  switch (mode) {
+    case "off":
+      return false;
+    case "write-only":
+      return kind === "write" || kind === "edit";
+    case "minimal":
+      return kind === "workspace" || kind === "write" || kind === "edit";
+    case "full":
+      return true;
+  }
+}
+
+function toolCardDescriptorMeta(
+  config: ServerConfig,
+  kind: ToolCardKind,
+): ToolCardDescriptorMeta {
+  if (!shouldAttachToolCard(config.toolCardMode, kind)) return { _meta: {} };
+
+  return {
+    _meta: {
+      ui: {
+        resourceUri: WORKSPACE_APP_URI,
+        visibility: ["model"],
+      },
+    },
+  };
 }
 
 interface ToolNames {
@@ -418,12 +471,7 @@ function createMcpServer(
         skillDiagnostics: z.array(z.unknown()),
         instruction: z.string(),
       },
-      _meta: {
-        ui: {
-          resourceUri: WORKSPACE_APP_URI,
-          visibility: ["model"],
-        },
-      },
+      ...toolCardDescriptorMeta(config, "workspace"),
       annotations: { readOnlyHint: true },
     },
     async ({ path, mode, baseRef }) => {
@@ -542,12 +590,7 @@ function createMcpServer(
           .describe("Maximum number of lines to read."),
       },
       outputSchema: resultOutputSchema(),
-      _meta: {
-        ui: {
-          resourceUri: WORKSPACE_APP_URI,
-          visibility: ["model"],
-        },
-      },
+      ...toolCardDescriptorMeta(config, "read"),
       annotations: { readOnlyHint: true },
     },
     async ({ workspaceId, ...input }) => {
@@ -606,12 +649,7 @@ function createMcpServer(
         content: z.string().describe("Complete new file content."),
       },
       outputSchema: resultOutputSchema(),
-      _meta: {
-        ui: {
-          resourceUri: WORKSPACE_APP_URI,
-          visibility: ["model"],
-        },
-      },
+      ...toolCardDescriptorMeta(config, "write"),
       annotations: WRITE_TOOL_ANNOTATIONS,
     },
     async ({ workspaceId, ...input }) => {
@@ -692,12 +730,7 @@ function createMcpServer(
       outputSchema: resultOutputSchema({
         status: z.literal("applied"),
       }),
-      _meta: {
-        ui: {
-          resourceUri: WORKSPACE_APP_URI,
-          visibility: ["model"],
-        },
-      },
+      ...toolCardDescriptorMeta(config, "edit"),
       annotations: EDIT_TOOL_ANNOTATIONS,
     },
     async ({ workspaceId, ...input }) => {
@@ -774,12 +807,7 @@ function createMcpServer(
           include: z.string().optional().describe("Optional include glob."),
         },
         outputSchema: resultOutputSchema(),
-        _meta: {
-          ui: {
-            resourceUri: WORKSPACE_APP_URI,
-            visibility: ["model"],
-          },
-        },
+        ...toolCardDescriptorMeta(config, "search"),
         annotations: { readOnlyHint: true },
       },
       async ({ workspaceId, ...input }) => {
@@ -834,12 +862,7 @@ function createMcpServer(
             .describe("Optional path scope relative to the workspace root."),
         },
         outputSchema: resultOutputSchema(),
-        _meta: {
-          ui: {
-            resourceUri: WORKSPACE_APP_URI,
-            visibility: ["model"],
-          },
-        },
+        ...toolCardDescriptorMeta(config, "search"),
         annotations: { readOnlyHint: true },
       },
       async ({ workspaceId, ...input }) => {
@@ -894,12 +917,7 @@ function createMcpServer(
             ),
         },
         outputSchema: resultOutputSchema(),
-        _meta: {
-          ui: {
-            resourceUri: WORKSPACE_APP_URI,
-            visibility: ["model"],
-          },
-        },
+        ...toolCardDescriptorMeta(config, "directory"),
         annotations: { readOnlyHint: true },
       },
       async ({ workspaceId, ...input }) => {
@@ -964,12 +982,7 @@ function createMcpServer(
           .describe("Timeout in seconds. Defaults to 30, max 300."),
       },
       outputSchema: resultOutputSchema(),
-      _meta: {
-        ui: {
-          resourceUri: WORKSPACE_APP_URI,
-          visibility: ["model"],
-        },
-      },
+      ...toolCardDescriptorMeta(config, "shell"),
       annotations: SHELL_TOOL_ANNOTATIONS,
     },
     async ({ workspaceId, workingDirectory, ...input }) => {
