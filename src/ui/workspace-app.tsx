@@ -180,6 +180,7 @@ function AppRoot() {
       collapsedContextThreshold: 4,
       expansionLineCount: 20,
       stickyHeader: true,
+      disableFileHeader: true,
     }),
     [themeType],
   );
