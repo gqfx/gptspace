@@ -1,12 +1,16 @@
-# pi-on-mcp
+# DevSpace
 
-Expose Pi's local coding tools through a Streamable HTTP MCP server.
+Expose a secure local coding workspace through a Streamable HTTP MCP server.
 
-This project is for connecting MCP-capable hosts such as ChatGPT or Claude to a
-local development machine. The host calls MCP tools directly; work is not
-delegated to a separate local agent loop.
+DevSpace connects MCP-capable hosts such as ChatGPT or Claude to a local
+development machine. The host calls MCP tools directly; work is not delegated to
+a separate local agent loop.
 
 ## Current Tools
+
+Default tool naming is controlled by `DEVSPACE_TOOL_NAMING`.
+
+Legacy naming, the current default:
 
 - `open_workspace`
 - `read_file`
@@ -17,10 +21,21 @@ delegated to a separate local agent loop.
 - `list_directory`
 - `run_shell`
 
-Set `PI_ON_MCP_TOOL_MODE=minimal` to disable `grep_files`, `find_files`, and
-`list_directory`. In that mode, the server instructs clients to use `run_shell`
-with command-line tools such as `grep`, `rg`, `find`, `ls`, and `tree` for
-search and directory inspection.
+Short naming, enabled with `DEVSPACE_TOOL_NAMING=short`:
+
+- `open_workspace`
+- `read`
+- `write`
+- `edit`
+- `grep`
+- `glob`
+- `ls`
+- `bash`
+
+Set `DEVSPACE_TOOL_MODE=minimal` to disable the dedicated search/list tools. In
+that mode, the server instructs clients to use the shell tool with command-line
+programs such as `grep`, `rg`, `find`, `ls`, and `tree` for search and directory
+inspection.
 
 Server-level workflow guidance is exposed through MCP initialize instructions,
 not a dedicated info tool.
@@ -28,7 +43,7 @@ not a dedicated info tool.
 ## Persistent Result Payloads
 
 Tool result payloads are persisted in a global SQLite database under
-`~/.local/share/pi-on-mcp/pi-on-mcp.sqlite`, or under `PI_ON_MCP_STATE_DIR` when
+`~/.local/share/devspace/devspace.sqlite`, or under `DEVSPACE_STATE_DIR` when
 that variable is set. This lets UI cards such as edit/write diff viewers reload
 historical payloads after the MCP server process restarts.
 
@@ -41,11 +56,11 @@ Call `open_workspace` before using the coding tools:
 
 ```json
 {
-  "path": "~/personal/pi-on-mcp"
+  "path": "~/personal/my-project"
 }
 ```
 
-Absolute paths such as `/home/waishnav/personal/pi-on-mcp` are also supported.
+Absolute paths such as `/home/waishnav/personal/my-project` are also supported.
 
 The result includes a `workspaceId`. Use that `workspaceId` for subsequent
 calls:
@@ -69,11 +84,12 @@ npm install --include=dev
 npm run typecheck
 npm run build
 
-PI_ON_MCP_TOKEN="change-me" \
-PI_ON_MCP_ALLOWED_ROOTS="/home/waishnav/personal,/home/waishnav/work" \
-PI_ON_MCP_ALLOWED_HOSTS="localhost,127.0.0.1,agent.gitcms.blog" \
-PI_ON_MCP_PUBLIC_BASE_URL="https://agent.gitcms.blog" \
-PI_ON_MCP_TOOL_MODE="full" \
+DEVSPACE_TOKEN="change-me" \
+DEVSPACE_ALLOWED_ROOTS="/home/waishnav/personal,/home/waishnav/work" \
+DEVSPACE_ALLOWED_HOSTS="localhost,127.0.0.1,agent.gitcms.blog" \
+DEVSPACE_PUBLIC_BASE_URL="https://agent.gitcms.blog" \
+DEVSPACE_TOOL_MODE="full" \
+DEVSPACE_TOOL_NAMING="legacy" \
 npm run dev
 ```
 
@@ -84,11 +100,12 @@ Use release builds for long-running MCP server processes:
 ```bash
 npm run release:build
 
-PI_ON_MCP_TOKEN="change-me" \
-PI_ON_MCP_ALLOWED_ROOTS="/home/waishnav/personal,/home/waishnav/work" \
-PI_ON_MCP_ALLOWED_HOSTS="localhost,127.0.0.1,agent.gitcms.blog" \
-PI_ON_MCP_PUBLIC_BASE_URL="https://agent.gitcms.blog" \
-PI_ON_MCP_TOOL_MODE="minimal" \
+DEVSPACE_TOKEN="change-me" \
+DEVSPACE_ALLOWED_ROOTS="/home/waishnav/personal,/home/waishnav/work" \
+DEVSPACE_ALLOWED_HOSTS="localhost,127.0.0.1,agent.gitcms.blog" \
+DEVSPACE_PUBLIC_BASE_URL="https://agent.gitcms.blog" \
+DEVSPACE_TOOL_MODE="minimal" \
+DEVSPACE_TOOL_NAMING="short" \
 npm run release:start
 ```
 
@@ -108,7 +125,7 @@ The MCP endpoint is:
 http://127.0.0.1:7676/mcp
 ```
 
-Send `Authorization: Bearer <PI_ON_MCP_TOKEN>` when `PI_ON_MCP_TOKEN` is set.
+Send `Authorization: Bearer <DEVSPACE_TOKEN>` when `DEVSPACE_TOKEN` is set.
 
 ## Cloudflare Tunnel
 
@@ -129,9 +146,9 @@ https://your-tunnel-hostname.example.com/mcp
 This server exposes local filesystem and shell capabilities. Treat it like
 remote code execution on this machine.
 
-- Always use `PI_ON_MCP_TOKEN` outside purely local smoke tests.
-- Keep `PI_ON_MCP_ALLOWED_ROOTS` narrow.
-- If you expose the server through a tunnel, add the tunnel hostname to `PI_ON_MCP_ALLOWED_HOSTS`.
+- Always use `DEVSPACE_TOKEN` outside purely local smoke tests.
+- Keep `DEVSPACE_ALLOWED_ROOTS` narrow.
+- If you expose the server through a tunnel, add the tunnel hostname to `DEVSPACE_ALLOWED_HOSTS`.
 - Put Cloudflare Access or equivalent in front of the tunnel before exposing it.
-- `run_shell` can escape filesystem allowlists by design; shell access relies on
-  authentication and client trust, not path containment.
+- The shell tool can escape filesystem allowlists by design; shell access relies
+  on authentication and client trust, not path containment.
