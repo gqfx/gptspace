@@ -1,4 +1,6 @@
 import { timingSafeEqual, randomBytes, randomUUID, createHash } from "node:crypto";
+import { homedir } from "node:os";
+import { join, resolve } from "node:path";
 import type { Response } from "express";
 import type { OAuthRegisteredClientsStore } from "@modelcontextprotocol/sdk/server/auth/clients.js";
 import type { OAuthServerProvider, AuthorizationParams } from "@modelcontextprotocol/sdk/server/auth/provider.js";
@@ -11,6 +13,7 @@ import type {
 } from "@modelcontextprotocol/sdk/shared/auth.js";
 import { checkResourceAllowed, resourceUrlFromServerUrl } from "@modelcontextprotocol/sdk/shared/auth-utils.js";
 import { openDatabase, type DatabaseHandle } from "./db/client.js";
+import { expandHomePath } from "./roots.js";
 
 export interface OAuthConfig {
   ownerToken: string;
@@ -144,6 +147,14 @@ function redirectHostAllowed(redirectUri: string, allowedHosts: string[]): boole
   return allowedHosts.includes(parsed.hostname);
 }
 
+function defaultStateDir(): string {
+  return join(homedir(), ".local", "share", "devspace");
+}
+
+function resolveStateDir(value: string | undefined): string {
+  return resolve(expandHomePath(value ?? process.env.DEVSPACE_STATE_DIR ?? defaultStateDir()));
+}
+
 function registeredClient(
   client: Omit<OAuthClientInformationFull, "client_id" | "client_id_issued_at">,
 ): OAuthClientInformationFull {
@@ -257,9 +268,7 @@ export class SingleUserOAuthProvider implements OAuthServerProvider {
     resourceServerUrl: URL,
   ) {
     this.resourceServerUrl = resourceUrlFromServerUrl(resourceServerUrl);
-    this.clientsStore = config.stateDir
-      ? new SqliteOAuthClientsStore(config.allowedRedirectHosts, config.stateDir)
-      : new InMemoryOAuthClientsStore(config.allowedRedirectHosts);
+    this.clientsStore = new SqliteOAuthClientsStore(config.allowedRedirectHosts, resolveStateDir(config.stateDir));
   }
 
   async authorize(
