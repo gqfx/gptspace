@@ -1,135 +1,250 @@
-<p align="center">
-  <picture>
-    <img src="docs/assets/devspace-logo-light.png" alt="DevSpace logo" width="140">
-  </picture>
-</p>
+# GPTSpace
 
-<h1 align="center">DevSpace</h1>
+Bring a Codex-style local coding workspace to ChatGPT through a self-hosted MCP server.
 
-<p align="center">Bring a Codex-style coding workflow to ChatGPT.</p>
+GPTSpace lets ChatGPT connect to selected local project folders, inspect code, edit files, run approved local commands, and work inside isolated Git worktrees. You run the server on your own machine, expose it through a tunnel you control, and approve access with an Owner password.
 
-<p align="center">
-  <a href="https://www.npmjs.com/package/@waishnav/devspace"><img alt="npm" src="https://img.shields.io/npm/v/%40waishnav%2Fdevspace?style=flat-square" /></a>
-  <a href="https://github.com/Waishnav/devspace/actions/workflows/ci.yml"><img alt="CI" src="https://img.shields.io/github/actions/workflow/status/Waishnav/devspace/ci.yml?style=flat-square&branch=main" /></a>
-  <a href="https://github.com/Waishnav/devspace/blob/main/LICENSE"><img alt="License" src="https://img.shields.io/npm/l/%40waishnav%2Fdevspace?style=flat-square" /></a>
-</p>
+This fork focuses on a smoother ChatGPT connection flow, clearer workspace diagnostics, persistent OAuth client registration, safer file path handling, and optional command execution controls.
 
-[![DevSpace connected to ChatGPT](docs/assets/devspace-screenshot.png)](docs/assets/devspace-screenshot.png)
+## Highlights
 
-**Give ChatGPT a secure connection to your own machine and Turn ChatGPT into Codex**
+- Open configured workspaces by absolute path or by unique directory name, such as `reprokit`.
+- Persist OAuth client registrations so reconnects survive local server restarts.
+- Recover from stale MCP session IDs during reconnect initialization.
+- Scope file tools to the opened workspace and validate real filesystem paths.
+- Optionally disable local command execution with `DEVSPACE_COMMAND_TOOL=0`.
+- Load project instructions from `AGENTS.md` and `CLAUDE.md`.
+- Support optional ChatGPT Apps-compatible tool cards and change summaries.
 
-DevSpace is a self-hosted MCP server that lets ChatGPT read, edit, search, and run code in your real local projects — your files, your tools, your terminal — without uploading anything to a third party. You run it on your machine, expose it through a tunnel you control, and approve the connection with a password only you have.
+## Requirements
 
-## Installation
+- Node `>=20.12 <27`; Node 22 LTS is recommended.
+- npm.
+- Git.
+- Bash-compatible shell for command execution. On Windows, use Git Bash, WSL, MSYS2, or Cygwin.
+- A public HTTPS URL that forwards to the local GPTSpace server. Cloudflare Tunnel is recommended for local testing.
 
-DevSpace requires Node `>=20.12 <27`. Node 22 LTS is recommended.
+## Install
 
-Install the DevSpace CLI:
-
-```bash
-npm install -g @waishnav/devspace
-```
-
-Then initialize and start the server:
+Install the CLI:
 
 ```bash
-devspace init
-devspace serve
+npm install -g @gqfx/gptspace
 ```
 
-Or run it without a global install:
+Initialize and start the server:
 
 ```bash
-npx @waishnav/devspace init
-npx @waishnav/devspace serve
+gptspace init
+gptspace serve
 ```
 
-During setup, DevSpace asks for:
+Or run without a global install:
 
-- the local project folders ChatGPT is allowed to open through DevSpace
-- the local port, usually `7676`
-- your public HTTPS base URL from Cloudflare Tunnel, ngrok, Pinggy, Tailscale Funnel, or
-  another reverse proxy
+```bash
+npx @gqfx/gptspace init
+npx @gqfx/gptspace serve
+```
 
-Use the public origin without `/mcp` during setup:
+The package also keeps a `devspace` command alias for compatibility with the upstream project and existing scripts.
+
+## Configure
+
+During `gptspace init`, choose:
+
+- the local folders ChatGPT is allowed to open;
+- the local server port, usually `7676`;
+- the public HTTPS base URL for your tunnel, without `/mcp`.
+
+Example public base URL:
 
 ```text
-https://your-tunnel-host.example.com
+https://gptspace.example.com
 ```
 
-You will configure your MCP client with the public `/mcp` URL after setup.
+The MCP client should use the full MCP endpoint:
 
-When the client connects, DevSpace opens an Owner password approval page. Enter
-the Owner password printed by `devspace init`. It is also stored in:
+```text
+https://gptspace.example.com/mcp
+```
+
+When ChatGPT connects, GPTSpace opens an Owner password approval page. The Owner password is printed during setup and stored at:
 
 ```text
 ~/.devspace/auth.json
 ```
 
-Keep that password private.
+Keep that file private.
 
-## Connect Your MCP Client
+## Cloudflare Tunnel
 
-The default local endpoint is:
+GPTSpace does not manage tunnels for you. Cloudflare Tunnel is a convenient way to expose the local MCP server through HTTPS.
 
-```text
-http://127.0.0.1:7676/mcp
-```
+### Option A: Quick temporary tunnel
 
-Most users should connect through a public HTTPS tunnel:
-
-```text
-https://your-tunnel-host.example.com/mcp
-```
-
-## What ChatGPT Can Do
-
-Once connected, ChatGPT can open one of your approved project folders as a
-workspace. From there, it can inspect the repo, make scoped edits, run commands,
-and show you what changed.
-
-DevSpace gives ChatGPT tools to:
-
-- read, write, and edit files inside the opened workspace
-- search code and inspect directories
-- run shell commands for tests, builds, git, and package scripts
-- use isolated Git worktrees for parallel coding sessions
-- follow project instructions from `AGENTS.md` and `CLAUDE.md`
-- discover local agent skills from your skill folders
-- show tool cards and optional change summaries in ChatGPT Apps-compatible hosts
-
-## Mental Model
-
-DevSpace is remote access to selected local folders.
-
-You decide which roots are allowed. The MCP client still has powerful local
-capabilities inside an opened workspace, including shell execution. Treat a
-connected client like a trusted coding partner with access to your machine.
-
-For a normal ChatGPT coding session:
-
-1. Start your tunnel.
-2. Run `devspace serve`.
-3. Connect the MCP client to your public `/mcp` URL.
-4. Approve the connection with the Owner password.
-5. Ask ChatGPT to open a project inside one of your allowed roots.
-
-## Platform Support
-
-DevSpace supports Linux, macOS, and Windows environments with a Bash-compatible
-shell.
-
-| Platform                                          | Status            | Notes                                          |
-| ------------------------------------------------- | ----------------- | ---------------------------------------------- |
-| Linux                                             | Supported         | Requires Node, npm, Git, and Bash.             |
-| macOS                                             | Supported         | Requires Node, npm, Git, and Bash.             |
-| Windows with Git Bash, WSL, MSYS2, or Cygwin Bash | Supported         | Git Bash is the simplest native Windows setup. |
-| Windows PowerShell or `cmd.exe` only              | Not supported yet | Install Git Bash or use WSL.                   |
-
-Run this to inspect your local setup:
+Use this for quick local testing:
 
 ```bash
-devspace doctor
+cloudflared tunnel --url http://127.0.0.1:7676
+```
+
+Cloudflare prints a temporary HTTPS URL, usually ending in `trycloudflare.com`. Start GPTSpace with that origin:
+
+```bash
+DEVSPACE_PUBLIC_BASE_URL="https://your-temporary-url.trycloudflare.com" gptspace serve
+```
+
+Then configure ChatGPT with:
+
+```text
+https://your-temporary-url.trycloudflare.com/mcp
+```
+
+Temporary tunnel URLs change between runs. If the URL changes, restart GPTSpace with the new `DEVSPACE_PUBLIC_BASE_URL` or update the saved config:
+
+```bash
+gptspace config set publicBaseUrl https://your-new-url.trycloudflare.com
+```
+
+### Option B: Named Cloudflare Tunnel with your own domain
+
+Use this for a stable domain:
+
+```bash
+cloudflared tunnel login
+cloudflared tunnel create gptspace
+cloudflared tunnel route dns gptspace gptspace.example.com
+```
+
+Create `~/.cloudflared/config.yml`:
+
+```yaml
+tunnel: gptspace
+credentials-file: /Users/you/.cloudflared/<tunnel-id>.json
+
+ingress:
+  - hostname: gptspace.example.com
+    service: http://127.0.0.1:7676
+  - service: http_status:404
+```
+
+Run the tunnel:
+
+```bash
+cloudflared tunnel run gptspace
+```
+
+Configure GPTSpace with the origin only:
+
+```bash
+gptspace config set publicBaseUrl https://gptspace.example.com
+gptspace serve
+```
+
+Configure ChatGPT with:
+
+```text
+https://gptspace.example.com/mcp
+```
+
+## Common local workflow
+
+```bash
+# terminal 1: run your tunnel
+cloudflared tunnel --url http://127.0.0.1:7676
+
+# terminal 2: run GPTSpace
+DEVSPACE_PUBLIC_BASE_URL="https://your-url.trycloudflare.com" \
+DEVSPACE_LOG_FORMAT=pretty \
+DEVSPACE_LOG_LEVEL=debug \
+gptspace serve
+```
+
+Then ask ChatGPT to open a workspace. If your allowed root is `~/codes`, you can say:
+
+```text
+Open reprokit through GPTSpace.
+```
+
+GPTSpace can resolve a unique matching directory under configured allowed roots.
+
+## Useful environment variables
+
+| Variable | Purpose |
+| --- | --- |
+| `DEVSPACE_ALLOWED_ROOTS` | Comma-separated local roots that workspaces may open. Overrides saved config. |
+| `DEVSPACE_PUBLIC_BASE_URL` | Public HTTPS origin, without `/mcp`. Useful for temporary tunnels. |
+| `DEVSPACE_ALLOWED_HOSTS` | Optional Host header allowlist override. Use `*` only for local debugging. |
+| `DEVSPACE_OAUTH_OWNER_TOKEN` | Owner password for OAuth approval. Must be at least 16 characters. |
+| `DEVSPACE_STATE_DIR` | SQLite state directory for workspace sessions and OAuth client registrations. |
+| `DEVSPACE_WORKTREE_ROOT` | Directory for managed Git worktrees. |
+| `DEVSPACE_COMMAND_TOOL` | Set to `0`, `false`, `no`, or `off` to disable local command execution. |
+| `DEVSPACE_LOG_FORMAT` | Use `pretty` for local debugging or `json` for structured logs. |
+| `DEVSPACE_LOG_LEVEL` | `silent`, `error`, `warn`, `info`, or `debug`. |
+
+## What ChatGPT can do
+
+After approval, ChatGPT can use GPTSpace tools to:
+
+- open a workspace under an allowed root;
+- read, write, and edit files in the workspace;
+- search code and inspect directories;
+- run local commands when command execution is enabled;
+- create isolated Git worktrees for parallel work;
+- follow instructions from `AGENTS.md` and `CLAUDE.md`;
+- discover local agent skills;
+- show tool cards and change summaries in compatible hosts.
+
+## Security model
+
+GPTSpace is remote access to selected local folders.
+
+You decide which roots are allowed. File tools are scoped to the opened workspace and validate real filesystem paths, including symlink targets. Command execution is intentionally powerful because it runs as your local user. Treat a connected MCP client like a trusted coding partner with access to your machine.
+
+For safer local use, disable command execution:
+
+```bash
+DEVSPACE_COMMAND_TOOL=0 gptspace serve
+```
+
+Prefer narrow allowed roots, such as:
+
+```text
+~/codes/reprokit
+~/work/specific-project
+```
+
+Avoid broad roots like `~`, `/`, or `C:\`.
+
+## Local development
+
+```bash
+npm install --include=dev
+npm run dev
+npm run typecheck
+npm test
+npm run build
+npm run start
+```
+
+`npm run dev` watches `src` and restarts the server after changes or crashes.
+
+To install the current checkout globally for local testing:
+
+```bash
+npm run build
+npm link
+
+gptspace doctor
+gptspace serve
+```
+
+To simulate an npm release locally:
+
+```bash
+npm run build
+npm pack
+npm install -g ./gqfx-gptspace-*.tgz
 ```
 
 ## Documentation
@@ -140,40 +255,10 @@ devspace doctor
 - [Security Model](docs/security.md)
 - [Troubleshooting Gotchas](docs/gotchas.md)
 
-## Philosophy
+Some documentation files may still contain upstream DevSpace wording while this fork is being rebranded.
 
-Every piece of software is becoming conversational. Natural language is
-redefining how we interact with tools, workflows, and systems.
+## Acknowledgements
 
-My bet is that ChatGPT becomes the operating system for everything. Once we
-reach AGI, we will simply talk to ChatGPT, and it will prompt, coordinate, and
-orchestrate sub-agents that set up the right loops for us.
+GPTSpace is forked from and inspired by [Waishnav/devspace](https://github.com/Waishnav/devspace). Thanks to Waishnav for the original DevSpace project and for the core idea: giving MCP-capable hosts such as ChatGPT a secure, inspectable bridge into local coding workspaces.
 
-We are not there yet.
-
-DevSpace is one attempt to fast-forward that future: a way for MCP-capable
-hosts like ChatGPT and Claude to work directly with local project files through
-explicit, inspectable tools.
-
-## Built by Waishnav
-
-I'm Waishnav, the creator of [GitCMS](https://gitcms.dev/), a Git-backed CMS
-for markdown sites.
-
-I like building opinionated products, and DevSpace is another example of that.
-I'm on a journey to build a single-person company doing multiple millions in
-revenue. If you want to watch the failures, wins, lessons, and everything in
-between, come hang out with me on [X](https://x.com/wshxnv).
-
-## Local Development
-
-For working on DevSpace itself:
-
-```bash
-npm install --include=dev
-npm run dev
-npm run typecheck
-npm test
-npm run build
-npm run start
-```
+This repository builds on that foundation and adapts the workflow for this fork's ChatGPT-focused local development use cases.
