@@ -2,7 +2,7 @@ import express from "express";
 import { isInitializeRequest } from "@modelcontextprotocol/sdk/types.js";
 
 const MCP_SESSION_ID_HEADER = "mcp-session-id";
-const INSTALLED = Symbol.for("devspace.mcpSessionHeaderShimInstalled");
+const INSTALLED = "__devspaceMcpSessionHeaderShimInstalled";
 type HeaderFunction = typeof express.request.header;
 type PatchedRequestPrototype = typeof express.request & {
   [INSTALLED]?: boolean;
