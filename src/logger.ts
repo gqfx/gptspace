@@ -1,3 +1,4 @@
+import "./mcp-session-header.js";
 import type { Request } from "express";
 
 export type LogLevel = "silent" | "error" | "warn" | "info" | "debug";
