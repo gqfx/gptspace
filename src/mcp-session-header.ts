@@ -1,24 +1,26 @@
 import express from "express";
+import type { Request } from "express";
 import { isInitializeRequest } from "@modelcontextprotocol/sdk/types.js";
 
 const MCP_SESSION_ID_HEADER = "mcp-session-id";
 const INSTALLED = "__devspaceMcpSessionHeaderShimInstalled";
-type HeaderFunction = typeof express.request.header;
-type PatchedRequestPrototype = typeof express.request & {
+type HeaderFunction = (name: string) => string | undefined;
+type PatchedRequestPrototype = {
+  header: HeaderFunction;
   [INSTALLED]?: boolean;
 };
 
 installMcpSessionHeaderShim();
 
 function installMcpSessionHeaderShim(): void {
-  const requestPrototype = express.request as PatchedRequestPrototype;
+  const requestPrototype = express.request as unknown as PatchedRequestPrototype;
   if (requestPrototype[INSTALLED]) return;
 
-  const originalHeader = requestPrototype.header as HeaderFunction;
-  requestPrototype.header = function patchedHeader(this: express.Request, name: string): string | undefined {
+  const originalHeader = requestPrototype.header;
+  requestPrototype.header = function patchedHeader(this: Request, name: string): string | undefined {
     if (shouldHideStaleSessionHeader(this, name)) return undefined;
     return originalHeader.call(this, name);
-  } as HeaderFunction;
+  };
 
   Object.defineProperty(requestPrototype, INSTALLED, {
     value: true,
@@ -26,7 +28,7 @@ function installMcpSessionHeaderShim(): void {
   });
 }
 
-function shouldHideStaleSessionHeader(req: express.Request, name: string): boolean {
+function shouldHideStaleSessionHeader(req: Request, name: string): boolean {
   return (
     name.toLowerCase() === MCP_SESSION_ID_HEADER &&
     req.method === "POST" &&
