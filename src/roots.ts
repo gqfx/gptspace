@@ -48,7 +48,8 @@ export async function assertExistingPath(path: string, allowedRoots: string[]): 
 
 export async function assertWritablePath(path: string, allowedRoots: string[]): Promise<string> {
   const resolvedPath = assertAllowedPath(path, allowedRoots);
-  const finalParent = await realpath(dirname(resolvedPath));
+  const existingParent = await findExistingParent(resolvedPath);
+  const finalParent = await realpath(existingParent);
   if (await isFinalPathAllowed(finalParent, allowedRoots)) return resolvedPath;
 
   throw new AccessDeniedError(outsideAllowedRootsMessage(path, allowedRoots));
@@ -78,6 +79,31 @@ async function isFinalPathAllowed(path: string, allowedRoots: string[]): Promise
   );
 
   return finalRoots.some((root) => isPathInsideRoot(path, root));
+}
+
+async function findExistingParent(path: string): Promise<string> {
+  let current = dirname(resolve(path));
+
+  while (true) {
+    try {
+      await realpath(current);
+      return current;
+    } catch (error) {
+      if (!isPathNotFound(error)) throw error;
+      const parent = dirname(current);
+      if (parent === current) return current;
+      current = parent;
+    }
+  }
+}
+
+function isPathNotFound(error: unknown): boolean {
+  return Boolean(
+    typeof error === "object" &&
+      error &&
+      "code" in error &&
+      (error as { code?: unknown }).code === "ENOENT",
+  );
 }
 
 function outsideAllowedRootsMessage(path: string, allowedRoots: string[]): string {
