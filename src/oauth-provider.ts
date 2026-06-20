@@ -1,4 +1,6 @@
 import { timingSafeEqual, randomBytes, randomUUID, createHash } from "node:crypto";
+import { homedir } from "node:os";
+import { join, resolve } from "node:path";
 import type { Response } from "express";
 import type { OAuthRegisteredClientsStore } from "@modelcontextprotocol/sdk/server/auth/clients.js";
 import type { OAuthServerProvider, AuthorizationParams } from "@modelcontextprotocol/sdk/server/auth/provider.js";
@@ -10,6 +12,8 @@ import type {
   OAuthTokens,
 } from "@modelcontextprotocol/sdk/shared/auth.js";
 import { checkResourceAllowed, resourceUrlFromServerUrl } from "@modelcontextprotocol/sdk/shared/auth-utils.js";
+import { openDatabase, type DatabaseHandle } from "./db/client.js";
+import { expandHomePath } from "./roots.js";
 
 export interface OAuthConfig {
   ownerToken: string;
@@ -17,6 +21,7 @@ export interface OAuthConfig {
   refreshTokenTtlSeconds: number;
   scopes: string[];
   allowedRedirectHosts: string[];
+  stateDir?: string;
 }
 
 interface AuthorizationCodeRecord {
@@ -39,6 +44,10 @@ interface RefreshTokenRecord {
   scopes: string[];
   expiresAt: number;
   resource?: URL;
+}
+
+interface OAuthClientRow {
+  clientJson: string;
 }
 
 const CODE_TTL_MS = 5 * 60 * 1000;
@@ -138,6 +147,37 @@ function redirectHostAllowed(redirectUri: string, allowedHosts: string[]): boole
   return allowedHosts.includes(parsed.hostname);
 }
 
+function defaultStateDir(): string {
+  return join(homedir(), ".local", "share", "devspace");
+}
+
+function resolveStateDir(value: string | undefined): string {
+  return resolve(expandHomePath(value ?? process.env.DEVSPACE_STATE_DIR ?? defaultStateDir()));
+}
+
+function registeredClient(
+  client: Omit<OAuthClientInformationFull, "client_id" | "client_id_issued_at">,
+): OAuthClientInformationFull {
+  const now = Math.floor(Date.now() / 1000);
+  return {
+    ...client,
+    client_id: `devspace-${randomUUID()}`,
+    client_id_issued_at: now,
+    token_endpoint_auth_method: client.token_endpoint_auth_method ?? "none",
+    grant_types: client.grant_types ?? ["authorization_code", "refresh_token"],
+    response_types: client.response_types ?? ["code"],
+  };
+}
+
+function assertRedirectUrisAllowed(
+  client: Omit<OAuthClientInformationFull, "client_id" | "client_id_issued_at">,
+  allowedRedirectHosts: string[],
+): void {
+  if (!client.redirect_uris.every((uri) => redirectHostAllowed(uri, allowedRedirectHosts))) {
+    throw new InvalidRequestError("Client redirect_uri is not allowed for this DevSpace server");
+  }
+}
+
 export class InMemoryOAuthClientsStore implements OAuthRegisteredClientsStore {
   private readonly clients = new Map<string, OAuthClientInformationFull>();
 
@@ -150,21 +190,69 @@ export class InMemoryOAuthClientsStore implements OAuthRegisteredClientsStore {
   registerClient(
     client: Omit<OAuthClientInformationFull, "client_id" | "client_id_issued_at">,
   ): OAuthClientInformationFull {
-    if (!client.redirect_uris.every((uri) => redirectHostAllowed(uri, this.allowedRedirectHosts))) {
-      throw new InvalidRequestError("Client redirect_uri is not allowed for this DevSpace server");
-    }
+    assertRedirectUrisAllowed(client, this.allowedRedirectHosts);
 
-    const now = Math.floor(Date.now() / 1000);
-    const registered: OAuthClientInformationFull = {
-      ...client,
-      client_id: `devspace-${randomUUID()}`,
-      client_id_issued_at: now,
-      token_endpoint_auth_method: client.token_endpoint_auth_method ?? "none",
-      grant_types: client.grant_types ?? ["authorization_code", "refresh_token"],
-      response_types: client.response_types ?? ["code"],
-    };
+    const registered = registeredClient(client);
     this.clients.set(registered.client_id, registered);
     return registered;
+  }
+}
+
+export class SqliteOAuthClientsStore implements OAuthRegisteredClientsStore {
+  private readonly database: DatabaseHandle;
+
+  constructor(private readonly allowedRedirectHosts: string[], stateDir: string) {
+    this.database = openDatabase(stateDir);
+    this.migrate();
+  }
+
+  getClient(clientId: string): OAuthClientInformationFull | undefined {
+    const row = this.database.sqlite
+      .prepare("select client_json as clientJson from oauth_clients where id = ?")
+      .get(clientId) as OAuthClientRow | undefined;
+    if (!row) return undefined;
+
+    this.database.sqlite
+      .prepare("update oauth_clients set last_used_at = ? where id = ?")
+      .run(new Date().toISOString(), clientId);
+
+    return JSON.parse(row.clientJson) as OAuthClientInformationFull;
+  }
+
+  registerClient(
+    client: Omit<OAuthClientInformationFull, "client_id" | "client_id_issued_at">,
+  ): OAuthClientInformationFull {
+    assertRedirectUrisAllowed(client, this.allowedRedirectHosts);
+
+    const registered = registeredClient(client);
+    const now = new Date().toISOString();
+    this.database.sqlite
+      .prepare(
+        [
+          "insert into oauth_clients (id, client_json, created_at, last_used_at)",
+          "values (?, ?, ?, ?)",
+          "on conflict(id) do update set",
+          "client_json = excluded.client_json,",
+          "last_used_at = excluded.last_used_at",
+        ].join(" "),
+      )
+      .run(registered.client_id, JSON.stringify(registered), now, now);
+
+    return registered;
+  }
+
+  private migrate(): void {
+    this.database.sqlite.exec(`
+      create table if not exists oauth_clients (
+        id text primary key,
+        client_json text not null,
+        created_at text not null,
+        last_used_at text not null
+      );
+
+      create index if not exists oauth_clients_last_used_at_idx
+        on oauth_clients(last_used_at desc);
+    `);
   }
 }
 
@@ -180,7 +268,7 @@ export class SingleUserOAuthProvider implements OAuthServerProvider {
     resourceServerUrl: URL,
   ) {
     this.resourceServerUrl = resourceUrlFromServerUrl(resourceServerUrl);
-    this.clientsStore = new InMemoryOAuthClientsStore(config.allowedRedirectHosts);
+    this.clientsStore = new SqliteOAuthClientsStore(config.allowedRedirectHosts, resolveStateDir(config.stateDir));
   }
 
   async authorize(
