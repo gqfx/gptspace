@@ -161,7 +161,7 @@ export class WorkspaceRegistry {
   }
 
   private async openCheckoutWorkspace(path: string): Promise<WorkspaceContext> {
-    const root = assertAllowedPath(path, this.config.allowedRoots);
+    const root = await this.resolveOpenWorkspacePath(path);
     await mkdir(root, { recursive: true });
 
     const rootStats = await stat(root);
@@ -173,8 +173,9 @@ export class WorkspaceRegistry {
   }
 
   private async openWorktreeWorkspace(path: string, baseRef: string | undefined): Promise<WorkspaceContext> {
+    const sourcePath = await this.resolveOpenWorkspacePath(path);
     const worktree = await createManagedWorktree({
-      sourcePath: path,
+      sourcePath,
       baseRef,
       config: this.config,
     });
@@ -185,6 +186,38 @@ export class WorkspaceRegistry {
       sourceRoot: worktree.sourceRoot,
       worktree,
     });
+  }
+
+  private async resolveOpenWorkspacePath(path: string): Promise<string> {
+    try {
+      return assertAllowedPath(path, this.config.allowedRoots);
+    } catch (error) {
+      const namedWorkspace = await this.findAllowedRootChild(path);
+      if (namedWorkspace) return namedWorkspace;
+      throw error;
+    }
+  }
+
+  private async findAllowedRootChild(name: string): Promise<string | undefined> {
+    if (!isPlainDirectoryName(name)) return undefined;
+
+    const matches: string[] = [];
+    for (const allowedRoot of this.config.allowedRoots) {
+      const candidate = assertAllowedPath(resolve(allowedRoot, name), [allowedRoot]);
+      try {
+        const candidateStats = await stat(candidate);
+        if (candidateStats.isDirectory()) matches.push(candidate);
+      } catch {
+        // Ignore roots where the named child does not exist.
+      }
+    }
+
+    if (matches.length === 0) return undefined;
+    if (matches.length === 1) return matches[0];
+
+    throw new Error(
+      `Workspace name is ambiguous: ${name}. Matching paths: ${matches.join(", ")}`,
+    );
   }
 
   private async createWorkspaceContext(input: {
@@ -286,6 +319,17 @@ const SKIPPED_CONTEXT_DIRS = new Set([
   ".turbo",
   ".cache",
 ]);
+
+function isPlainDirectoryName(name: string): boolean {
+  return (
+    name.length > 0 &&
+    name !== "." &&
+    name !== ".." &&
+    !name.startsWith("~") &&
+    !name.includes("/") &&
+    !name.includes("\\")
+  );
+}
 
 export function formatAgentsPath(path: string, workspaceRoot: string | undefined): string {
   if (!workspaceRoot) return path.split(sep).join("/");
