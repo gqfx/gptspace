@@ -50,6 +50,10 @@ function formatToolError(error: unknown): McpContent[] {
   return [{ type: "text", text: message }];
 }
 
+function isDisabled(value: string | undefined): boolean {
+  return ["0", "false", "no", "off"].includes(value?.toLowerCase() ?? "");
+}
+
 async function runTool<TInput, TDetails = unknown>(
   execute: (input: TInput) => Promise<AgentToolResult<TDetails>>,
   input: TInput,
@@ -119,6 +123,13 @@ export async function listDirectoryTool(input: LsToolInput, context: ToolContext
 }
 
 export async function runShellTool(input: BashToolInput, context: ToolContext): Promise<ToolResponse> {
+  if (isDisabled(process.env.DEVSPACE_COMMAND_TOOL)) {
+    return {
+      content: [{ type: "text", text: "Command execution is disabled by DEVSPACE_COMMAND_TOOL." }],
+      isError: true,
+    };
+  }
+
   const tool = createBashTool(context.cwd);
   const timeout = input.timeout === undefined ? 30 : Math.min(input.timeout, 300);
 
